@@ -1,11 +1,5 @@
 image: ghcr.io/sijanonly/thinking-in-tokens:latest
 
-command: >
-  sh -c '
-    cd /repo &&
-    pelican content
-      -s pelicanconf.py
-      -o output
-  '
+command: sh -c 'cd /repo && pelican content -s pelicanconf.py -o output'
 
 public: output
