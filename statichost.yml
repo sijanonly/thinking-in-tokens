@@ -1,0 +1,10 @@
+image: ghcr.io/sijanonly/thinking-in-tokens:latest
+
+command: >
+  sh -c '
+    cd /repo &&
+    test -d output &&
+    echo "Static site is ready."
+  '
+
+public: output

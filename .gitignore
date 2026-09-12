@@ -222,3 +222,6 @@ __marimo__/
 # Pelican
 output/
 cache/
+
+
+.docker-preview/
