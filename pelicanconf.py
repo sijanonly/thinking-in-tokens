@@ -21,7 +21,7 @@ STATIC_PATHS = [
     "images",
 ]
 
-# THEME = "theme/thinking-in-tokens"
+THEME = "theme/elegant"
 
 # Feed settings
 FEED_ALL_ATOM = "feeds/all.atom.xml"
