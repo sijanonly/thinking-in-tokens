@@ -65,3 +65,7 @@ DIRECT_TEMPLATES = [
     "tags",
     "archives",
 ]
+
+PLUGINS = [
+    "render_math",
+]

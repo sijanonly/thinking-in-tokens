@@ -147,6 +147,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pelican-render-math"
+version = "1.0.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pelican" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/39/ce/b7ca0f603d78811b944951ad2f83f28ad3018ef1b3653221deef81e068c5/pelican_render_math-1.0.5.tar.gz", hash = "sha256:dfb36fb5cb62f40ee05d747f47207ec15511f8d77635def8c22a00846cca742b", size = 29453, upload-time = "2025-10-22T09:13:58.185Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/51/0e/368abb67e18c4ce965ce88cf96aa67c6cb8be2f8e0b2ed1ec1f306be5dad/pelican_render_math-1.0.5-py3-none-any.whl", hash = "sha256:6383b798aba721ed033a67bbc71c8f555b72c7d35e22a32477c958286f719eca", size = 28788, upload-time = "2025-10-22T09:13:56.792Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.19.2"
 source = { registry = "https://pypi.org/simple" }
@@ -196,12 +208,14 @@ source = { virtual = "." }
 dependencies = [
     { name = "markdown" },
     { name = "pelican" },
+    { name = "pelican-render-math" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "markdown", specifier = "==3.8.2" },
     { name = "pelican", specifier = "==4.12.0" },
+    { name = "pelican-render-math", specifier = ">=1.0.5" },
 ]
 
 [[package]]
