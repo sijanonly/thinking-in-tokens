@@ -28,7 +28,7 @@ That sum is the classic triangle number. Step 1 costs *k*. Step 10 costs 10k. St
 
 ### A worked example (illustrative, using $3 per million input tokens)
 
-Assume *k* = 2,000 net new tokens per step, input pricing of $3 per million tokens - in the range of current frontier model pricing of roughly $2.50-$5 per million input tokens [Waxell](https://waxell.ai/blog/ai-agent-context-window-cost), and consistent with models like Claude Sonnet at $3 input / $15 output per million tokens [IntuitionLabs](https://intuitionlabs.ai/articles/claude-pricing-plans-api-costs):
+Assume k = 2,000 net new tokens per step, input pricing of $$\$3$$ per million tokens - in the range of current frontier model pricing of roughly $$\$2.50-\$5$$ per million input tokens [Waxell](https://waxell.ai/blog/ai-agent-context-window-cost), and consistent with models like Claude Sonnet at $3 input / $15 output per million tokens [IntuitionLabs](https://intuitionlabs.ai/articles/claude-pricing-plans-api-costs):
 
 | Steps (N) | Cumulative input tokens | Cumulative input cost | Naive estimate (N * k) | Multiplier |
 |---|---|---|---|---|
@@ -82,7 +82,7 @@ The honest framing: caching doesn't repeal the quadratic - it changes the *const
 - **Log `cached_tokens` separately** from total input tokens on every call. Your true cost trend is the cache-*miss* input volume, not the raw input count.
 - **Set a context budget per task.** If a task type routinely runs past ~30-50 steps, the quadratic is working against you structurally, not incidentally.
 - **Structure prompts for prefix stability.** Static instructions first, volatile content last - this is cache engineering as much as prompt engineering.
-- **Consider context management deliberately, not automatically.** Compaction (summarizing older turns to shrink the context) reduces the quadratic's base, but it carries its own serious risk - it's how agents *silently lose* their own safety rules. That failure mode deserves its own post: [how context compaction makes agents forget rules](#) *(internal link - Blog 2)*.
+- **Consider context management deliberately, not automatically.** Compaction (summarizing older turns to shrink the context) reduces the quadratic's base, but it carries its own serious risk - it's how agents *silently lose* their own safety rules. That failure mode deserves its own post: [how context compaction makes agents forget rules](https://blog.sijanb.com.np/articles/2026/09/context-compaction-agent-forgets-rules/)
 
 ## FAQ
 
