@@ -27,7 +27,7 @@ This creates a structural dependency that's easy to miss while demos stay short:
 
 ## The mechanism: what compaction actually does
 
-Compaction is the standard answer to a real problem. Long agent sessions accumulate tool outputs, error messages, and reasoning traces until they hit the context window limit - and (as covered in a companion post on [why agent costs scale quadratically with context size](#) *(internal link - Blog 1)*), every step re-bills the full transcript, so unmanaged growth is expensive as well as physically unsustainable.
+Compaction is the standard answer to a real problem. Long agent sessions accumulate tool outputs, error messages, and reasoning traces until they hit the context window limit - and (as covered in a companion post on [why agent costs scale quadratically with context size](https://blog.sijanb.com.np/articles/2026/09/llm-agent-quadratic-context-cost/)), every step re-bills the full transcript, so unmanaged growth is expensive as well as physically unsustainable.
 
 Compaction works like this: when the conversation reaches a configured token threshold, the system **summarizes the history and reinitiates a new, shorter context** from that summary [Anthropic](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents). Claude Code, for example, summarizes the conversation history automatically when a long session approaches the limit [Claude Code Docs](https://code.claude.com/docs/en/context-window), and the platform-level compaction feature summarizes "important details" while removing older tool results [Claude Platform Docs](https://platform.claude.com/docs/en/build-with-claude/compaction).
 
