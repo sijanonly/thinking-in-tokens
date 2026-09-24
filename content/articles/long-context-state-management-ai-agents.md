@@ -2,7 +2,7 @@ Title: Long-Context and State Management for AI Agents
 Date: 2026-09-23
 Category: AI Agents
 Tags: ai-agents, tool-calling, grammar-constrained-decoding
-Slug: how-ai-agents-turn-text-into-actions
+Slug: long-context-state-management-ai-agents
 Authors: Sijan Bhandari
 Summary: Long-context AI agents slow down as history grows. Here is how KV caching and context compaction keep latency under control.
 
