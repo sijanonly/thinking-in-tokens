@@ -1,38 +1,40 @@
-Title: What Is an AI Agent? A Practical Guide to Building Your First One
+Title: What Is an AI Agent and How Do You Build Your First One ?
 Date: 2026-09-13
 Category: AI Agents
 Tags: ai-agents, llm, agent-architecture, chatbot-agent, ai-workflows
 Slug: what-is-an-ai-agent-how-to-build-your-first-one
 Authors: Sijan Bhandari
-Summary: What an AI agent actually is, how it differs from a chatbot and a workflow, and how to build your first one with a model, tools, context, and a loop.
+Summary: An AI agent is a model in a control loop with tools and memory. What that means, where beginners get stuck, and how to build a small one.
 
-The word "agent" gets attached to everything right now, usually to something that sounds either miraculous or completely made up.
+The word agent gets bolted onto everything right now. Usually it describes something that sounds either miraculous or completely made up.
 
-This guide skips the hype. It explains what an AI agent actually is, how it differs from a chatbot, and what you need to understand before building one.
+This post skips that. I'll lay out what an AI agent actually is, how it differs from a chatbot, and what you need to understand before you build one. No framework required, and no architecture diagram you can't read. Just the loop, the four parts that matter, and the places where first attempts go wrong.
 
-## The whole idea
+#### The whole idea
 
 An AI agent is a software system that uses a language model to choose actions, observe the results, and decide what to do next.
 
-Instead of answering a question once and stopping, it operates in a loop:
+Instead of answering a question once and stopping, it runs in a loop:
 
-> **Goal -> decision -> action -> result -> next decision**
+```
+Goal -> decision -> action -> result -> next decision
+```
 
-That is the core idea. Everything else is implementation detail.
+That's the core idea. Everything else is implementation detail.
 
-The model itself is rarely an agent on its own. An agent is the model **plus** the tools, context, permissions, and control logic that let it operate in an environment.
+The model on its own is rarely an agent. An agent is the model plus the tools, context, permissions, and control logic that let it work inside an environment.
 
-## Chatbot vs. agent: what actually changes?
+#### How a chatbot differs from an agent
 
 A regular LLM interaction looks like this:
 
-```text
+```
 You ask a question -> model generates text -> done
 ```
 
 An agent looks more like this:
 
-```text
+```
 You give a goal
 -> model chooses an action
 -> action runs
@@ -41,93 +43,71 @@ You give a goal
 -> repeats until the goal is complete or the process stops
 ```
 
+![Anthropic's diagram of an autonomous agent loop, showing the model taking actions, checking the environment, and looping until it stops](https://www.anthropic.com/_next/image?url=https%3A%2F%2Fwww-cdn.anthropic.com%2Fimages%2F4zrzovbb%2Fwebsite%2F58d9f10c985c4eb5d53798dea315f7bb5ab6249e-2401x1000.png&w=3840&q=75)
+
+*Figure from Anthropic's engineering post on building effective agents [Anthropic](https://www.anthropic.com/engineering/building-effective-agents).*
+
 The loop is the real difference. A smarter model is optional.
 
-A chatbot has one main opportunity to produce an answer. An agent can act, inspect what happened, and adjust, similar to debugging code:
+A chatbot gets one shot at an answer. An agent can act, inspect what happened, and adjust. It's the same shape as debugging:
 
 1. Run the program.
 2. Read the error.
 3. Change something.
 4. Run it again.
 
-That does not make an agent intelligent in the human sense. What it gives you is a system capable of taking multiple steps toward a goal.
+None of that makes an agent intelligent in the human sense. What it gives you is a system that can take several steps toward a goal.
 
-## Chatbot, workflow, or agent?
+#### Chatbot, workflow, or agent?
 
-These terms are often used interchangeably, but they describe different levels of flexibility.
+These three terms get used interchangeably. They describe different levels of flexibility.
 
-**Chatbot:** Responds to a user's input, usually with text.
+- **Chatbot:** responds to input, usually with text. *"Explain how gradient descent works."*
+- **Workflow:** follows a sequence someone already defined. Receive a support ticket, classify it, search the knowledge base, draft a response.
+- **Agent:** picks the sequence at runtime. *"Investigate this customer's billing problem and recommend a resolution."*
 
-> "Explain how gradient descent works."
+A workflow walks a path developers mostly specified. An agent decides part of that path while it runs. Anthropic draws the same line, describing workflows as systems where LLMs and tools are orchestrated "through predefined code paths," and agents as systems where "LLMs dynamically direct their own processes and tool usage" [Anthropic](https://www.anthropic.com/engineering/building-effective-agents).
 
-**Workflow:** Follows a predefined sequence.
+#### The four common pieces of an agent
 
-> Receive a support ticket -> classify it -> search the knowledge base -> draft a response.
+Not every agent has the same architecture. Most contain these four.
 
-**Agent:** Chooses the sequence dynamically.
+##### A model
 
-> Investigate this customer's billing problem and recommend a resolution.
+The model reads the goal, weighs the available information, and picks the next step.
 
-A workflow follows a path that developers have mostly specified. An agent determines some of that path at runtime. Anthropic describes this distinction as the difference between predefined workflows and systems that dynamically direct their own process and tool use.
+It might decide to search a database, call an API, ask you a question, or stop and report that it can't continue.
 
-## The four common pieces of an agent
+##### Tools
 
-Not every agent has exactly the same architecture, but most contain these four ingredients.
+Tools are functions the model can call. Searching the web. Running code. Querying a database. Reading files. Checking a monitoring system. Sending an email. Updating a ticket.
 
-### 1. A model
+Without tools, a model can still reason and generate text. It can't meaningfully touch anything outside itself.
 
-The model interprets the goal, considers the available information, and selects the next step.
+Tools usually land in three groups: data tools that retrieve information, action tools that change something, and orchestration tools that hand work to another agent or service.
 
-It might decide to search a database, call an API, ask the user a question, or stop and report that it cannot continue.
+##### Context or memory
 
-### 2. Tools
+The system has to track what already happened during the task. Previous messages. Tool calls and their results. Files and documents. A summary of earlier steps. Whatever came back from a database or vector store.
 
-Tools are functions the model can call, such as:
+In most systems, memory is nothing more than keeping enough relevant context for the next decision.
 
-- Searching the web
-- Running code
-- Querying a database
-- Reading files
-- Checking a monitoring system
-- Sending an email
-- Updating a ticket
+##### A control loop
 
-Without tools, a model can still reason or generate text, but it cannot meaningfully interact with external systems.
-
-Tools are often divided into three groups: **data tools** for retrieving information, **action tools** for changing something, and **orchestration tools** for delegating work to another agent or service.
-
-### 3. Context or memory
-
-The system needs to keep track of what has already happened during the task.
-
-That may include:
-
-- Previous messages
-- Tool calls and their results
-- Files or documents
-- A summary of earlier steps
-- Information retrieved from a database or vector store
-
-Forget the sci-fi image of long-term recall. In many systems, memory simply means maintaining enough relevant context for the next decision.
-
-### 4. A control loop
-
-The control loop is the code that runs the process:
+The control loop is the code that runs the process.
 
 1. Ask the model what to do.
-2. Execute the selected action.
+2. Execute the action it picked.
 3. Feed the result back to the model.
 4. Repeat, or stop.
 
-This is the part many tutorials gloss over. It is also what makes an agent different from a script that calls an API once.
+This is the part most tutorials gloss over. It's also what separates an agent from a script that calls an API once.
 
-## A concrete example
+#### A concrete example
 
-Suppose you want an agent that answers:
+Say you want an agent that answers *"Is the latest deployment healthy? If not, why?"*
 
-> "Is the latest deployment healthy? If not, why?"
-
-A plain LLM call cannot reliably answer that. It has no access to your monitoring dashboards, deployment system, or logs. Without that information, it can only guess.
+A plain LLM call can't answer that reliably. It has no access to your monitoring dashboards, your deployment system, or your logs. Without that information it can only guess.
 
 An agent could:
 
@@ -136,70 +116,57 @@ An agent could:
 3. Retrieve the logs for that test.
 4. Analyze the error.
 5. Decide whether it looks like a code defect or a flaky environment.
-6. Report the likely cause, or gather more information if necessary.
+6. Report the likely cause, or go gather more information.
 
-That is a working agent: a model, several tools, a control loop, and a clearly defined goal.
+That's a working agent. A model, several tools, a control loop, and a goal you can state in one sentence.
 
-## Where beginners get stuck
+#### Where beginners get stuck
 
-### The loop needs a stopping condition
+##### The loop needs a stopping condition
 
-Without limits, an agent can continue calling tools indefinitely, wasting time and money.
-
-Use safeguards such as:
+Without limits, an agent will keep calling tools and burn your budget doing it. Safeguards that actually work:
 
 - A maximum number of steps
 - A time limit
 - A token or cost budget
 - A list of actions that require approval
 - A clear success condition
-- A fallback when the agent cannot verify its answer
+- A fallback for when the agent can't verify its own answer
 
-### Tool descriptions matter
+##### Tool descriptions matter
 
-The model only knows what a tool does from the name and description you provide.
+The model only knows what a tool does from the name and description you write.
 
-A vague description such as:
+`get_data()` tells it almost nothing. Compare that with:
 
-> `get_data()`
+`get_deployment_logs(deployment_id, since_minutes): returns error and warning logs from the specified deployment during the requested time window.`
 
-is much less useful than:
+Clear names, clear arguments, a description, and an example all improve tool selection. [ADD: the tool description rewrite that fixed your worst tool-selection bug]
 
-> `get_deployment_logs(deployment_id, since_minutes): returns error and warning logs from the specified deployment during the requested time window.`
+##### More tools are not always better
 
-Clear names, arguments, descriptions, and examples improve tool selection.
+An agent with three well-defined tools can beat one with fifteen overlapping tools. Too many tools create ambiguity. Which search tool should it use? Which database holds the authoritative data? Is it allowed to send the message or only draft it? What happens when two tools return conflicting results?
 
-### More tools are not always better
+Add a tool when it solves a limitation you've actually hit. Skip it when the only reason to add one is that the framework makes it easy.
 
-An agent with three well-defined tools may outperform one with fifteen overlapping tools.
+##### Agents can fail silently
 
-Too many tools create ambiguity:
-
-- Which search tool should it use?
-- Which database contains the authoritative data?
-- Is it allowed to send the message or only draft it?
-- What happens if two tools return conflicting results?
-
-Add tools when they solve a demonstrated limitation. Skip them when the only reason to add one is that the framework makes it easy.
-
-### Agents can fail silently
-
-A bad tool call may not crash the system. It may return incomplete, stale, or incorrect information. The model then reasons from that information and continues as if everything is fine.
+A bad tool call doesn't have to crash anything. It can return incomplete, stale, or wrong data. The model reasons from that and continues as if all is well. [ADD: the worst silent failure you have actually watched happen, in one line]
 
 During development, log:
 
-- The model's selected action
+- The action the model chose
 - The tool arguments
 - The tool result
 - Errors and retries
-- The reason the agent stopped
-- Any human approvals or overrides
+- Why the agent stopped
+- Every human approval or override
 
-Without those logs, debugging becomes guesswork.
+Without those logs, debugging is guesswork.
 
-## How to build your first agent
+#### How to build your first agent
 
-You do not need a framework to understand the basic mechanism. Conceptually, the core loop looks like this:
+You don't need a framework to understand the mechanism. The core loop, in outline:
 
 ```python
 while not done:
@@ -214,63 +181,59 @@ while not done:
     done = model.check_if_finished(goal, history)
 ```
 
-A real implementation also needs input validation, authentication, error handling, logging, rate limits, and permission controls. But the basic idea is still this simple.
+A real implementation also needs input validation, authentication, error handling, logging, rate limits, and permission controls. The basic idea stays this simple.
 
-Frameworks such as LangChain, CrewAI, and model-provider agent SDKs can handle parts of the plumbing: tool schemas, message formatting, retries, tracing, and orchestration. They can be useful, but they can also hide the underlying mechanics.
+Frameworks like LangChain, CrewAI, and the model providers' agent SDKs handle parts of the plumbing: tool schemas, message formatting, retries, tracing, orchestration. Useful, and very good at hiding what's underneath.
 
-If the loop does not make sense yet, build a small version by hand first. Otherwise, a framework may add a layer of abstraction over confusion.
+If the loop doesn't make sense yet, build a small version by hand first. Otherwise you're stacking abstraction on top of confusion.
 
-## When to use an agent, and when not to
+#### When to use an agent, and when not to
 
-Agents are useful when:
+Agents earn their place when:
 
-- A task involves several steps
-- The exact sequence cannot be known in advance
-- The system must choose among multiple tools
+- A task takes several steps
+- The exact sequence can't be known in advance
+- The system has to choose among multiple tools
 - Inputs are varied or unstructured
-- A human would otherwise coordinate several software systems
+- A human would otherwise be coordinating several software systems
 - The result can be checked or reviewed
 
-An agent may be the wrong choice when:
+Reach for something simpler when:
 
 - A normal API call solves the problem
 - The process is completely predictable
 - Mistakes are unacceptable
 - Very low latency is required
-- There is no reliable way to verify the output
+- There's no reliable way to verify the output
 - The cost of repeated model calls outweighs the benefit
 
-A simple workflow is often cheaper, faster, and easier to test. Both OpenAI and Anthropic recommend starting with the simplest architecture that meets the task's requirements.
+A plain workflow is usually cheaper, faster, and easier to test. OpenAI's guide to building agents recommends maximizing a single agent's capabilities first and only scaling to more agents when complexity demands it. Anthropic puts it bluntly: find "the simplest solution possible, and only increasing complexity when needed," which might mean not building an agentic system at all [OpenAI](https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf) [Anthropic](https://www.anthropic.com/engineering/building-effective-agents).
 
-## The risks that matter
+#### The risks that matter
 
-Agents can affect the outside world, so their risks differ from those of a text-only chatbot.
+Agents can change things in the outside world, so their risks don't look like a chatbot's.
 
-### Incorrect actions
+##### Incorrect actions
 
-An agent may misunderstand the goal, choose the wrong tool, or continue from a false assumption. Errors can compound across multiple steps.
+The agent misreads the goal, picks the wrong tool, or keeps going from a false assumption. Errors stack up across steps.
 
-### Excessive permissions
+##### Excessive permissions
 
-An agent that can read every file, modify production systems, send messages, or spend money has a large potential blast radius.
+An agent that can read every file, modify production systems, send messages, or spend money has a large blast radius. Give it the minimum access the task needs. Read-only is a good starting point.
 
-Give it the minimum access required. Read-only access is a good starting point.
+##### Prompt injection
 
-### Prompt injection
+A webpage, an email, a document, or an issue tracker entry can carry instructions designed to manipulate the agent. An agent asked to summarize a webpage might hit hidden text telling it to reveal confidential information or call an unrelated tool. Treat external content as data, never as trusted instructions.
 
-A webpage, email, document, or issue tracker entry may contain instructions designed to manipulate the agent.
+##### Untrusted tools
 
-For example, an agent asked to summarize a webpage might encounter hidden text telling it to reveal confidential information or call an unrelated tool. Treat external content as data rather than as trusted instructions.
+Third-party tools can return wrong data, expose sensitive information, or carry security weaknesses of their own. Review tool access as carefully as model access.
 
-### Untrusted tools
+##### Weak accountability
 
-Third-party tools may return incorrect data, expose sensitive information, or contain security weaknesses. Tool access should be reviewed as carefully as model access.
+Once several tools and agents are in play, explaining why a particular action happened gets hard. Logging, approval checkpoints, monitoring, and clear ownership are what keep the system explainable. Joint guidance published May 1, 2026 by CISA, the NSA, and the Five Eyes cyber agencies lands on the same conclusion: adopt agentic AI incrementally, start with low-risk tasks, and treat human oversight and monitoring as requirements rather than options [CISA](https://www.cisa.gov/resources-tools/resources/careful-adoption-agentic-ai-services) [Crowell & Moring](https://www.crowell.com/en/insights/client-alerts/american-and-allied-cyber-agencies-issue-first-joint-guidance-on-securing-agentic-ai).
 
-### Weak accountability
-
-When several tools and agents interact, it can become difficult to explain why a particular action occurred. Logging, approval checkpoints, monitoring, and clear ownership are essential. Cybersecurity guidance for agentic systems emphasizes incremental deployment, human oversight, continuous monitoring, and carefully scoped tasks.
-
-## A safe first project
+#### A safe first project
 
 Build a small research agent that:
 
@@ -279,11 +242,11 @@ Build a small research agent that:
 3. Extracts key claims
 4. Records citations
 5. Produces a structured brief
-6. Requires human review before publication
+6. Requires human review before anything is published
 
-Start with read-only tools. Do not begin with unrestricted shell access, financial transactions, production deployment, or automatic email sending.
+Start with read-only tools. Don't begin with unrestricted shell access, financial transactions, production deployment, or automatic email sending.
 
-A sensible progression is:
+A progression that works:
 
 1. Make one model call.
 2. Add one read-only tool.
@@ -294,11 +257,11 @@ A sensible progression is:
 7. Test against known examples.
 8. Expand the toolset only when necessary.
 
-You will learn more from a small, observable agent than from a complicated multi-agent demo that you cannot explain or debug.
+You'll learn more from a small agent you can watch than from a complicated multi-agent demo you can't explain or debug.
 
-## Where to go from here
+#### Where to go from here
 
-Once the basic loop makes sense, explore:
+Once the basic loop makes sense:
 
 - Planning versus one-step reaction
 - Tool selection and structured outputs
@@ -309,34 +272,28 @@ Once the basic loop makes sense, explore:
 - Multi-agent coordination
 - Security and prompt-injection defenses
 
-None of these ideas matters if the basic architecture is unclear. Start with the four foundations: a model, tools, context, and a control loop.
+None of it matters if the basic architecture is still fuzzy. Start with the four foundations: a model, tools, context, and a control loop.
 
-Build a toy agent this week, even one that checks the weather and decides whether to remind you to bring an umbrella. A small working system will teach you more than most hype-heavy explanations.
+Build a toy agent this week. One that checks the weather and decides whether to nag you about an umbrella is fine. A small working system teaches you more than most hype-heavy explanations.
 
-## The takeaway
+#### The takeaway
 
-An AI agent is a model-driven software system that chooses actions within a defined environment. There is no magic employee inside it and no path to general intelligence either. Its usefulness depends far more on the quality of the tools, permissions, evaluation, and human oversight around it than on how impressive the model sounds.
+An AI agent is a model-driven software system that chooses actions inside a defined environment. There's no magic employee in there, and no path to general intelligence either. Whether it's useful depends far more on the tools, permissions, evaluation, and human oversight around it than on how impressive the model sounds.
 
-The practical way to think about agents:
-
-> **A model placed inside a controlled loop that can act, observe, and try again. That is the whole trick, and it is enough to build something useful.**
+The practical way to think about agents: a model inside a controlled loop that can act, observe, and try again. That's the whole trick, and it's enough to build something useful.
 
 ---
 
 ### FAQ
 
-**Q1: How much does it cost to run an agent compared with a single chatbot call?**
+**How much does it cost to run an agent compared with a single chatbot call?**
+Every loop iteration resends the goal, the history, and the tool results to the model. A task that takes ten steps can cost ten times a single call, sometimes more as the context grows, since naive loops re-bill every previous step [AugmentCode](https://www.augmentcode.com/guides/ai-agent-loop-token-cost-context-constraints). Set a token or dollar budget per run, keep tool results concise, and summarize earlier steps instead of passing the full history forever.
 
-An agent multiplies token usage because every loop iteration resends the goal, history, and tool results to the model. A task that takes ten steps can cost ten times a single call, sometimes more as context grows. Set a token or dollar budget per run, keep tool results concise, and summarize earlier steps instead of passing the full history indefinitely.
+**How do you evaluate an agent before trusting it in production?**
+Build a small set of known tasks with expected outcomes and run the agent against them after every change. Record full traces of actions, arguments, and results so you can see where the reasoning went wrong. Check the path as well as the final answer, since an agent can reach a correct result through unsafe or wasteful steps.
 
-**Q2: How do you evaluate an agent before trusting it in production?**
+**Is an AI agent the same as autonomous AI?**
+Autonomy in an agent is scoped. It decides the sequence of actions inside the environment, tools, and permissions you define. It sets no goals of its own, stays within the boundaries you configure, and stops when its stopping condition fires. Claims about fully autonomous AI describe something else, usually a marketing one.
 
-Build a small set of known tasks with expected outcomes and run the agent against them after every change. Record full traces of actions, arguments, and results so you can see where reasoning went wrong. Evaluation should cover both the final answer and the path taken, since an agent can reach a correct result through unsafe or wasteful steps.
-
-**Q3: Is an AI agent the same as autonomous AI?**
-
-No. Autonomy in an agent is scoped: it decides the sequence of actions within the environment, tools, and permissions you define. It sets no goals of its own, operates only inside the boundaries you configure, and stops when its stopping condition fires. Claims of fully autonomous AI describe a different thing entirely, and usually a marketing one.
-
-**Q4: Can I build an agent without LangChain or CrewAI?**
-
-Yes, and it is often the better first move. A minimal agent is a while loop, an API call to a model, a function dispatcher, and a history list, which fits in roughly fifty lines of Python. Frameworks become valuable later, when you need standardized tool schemas, tracing, retries, and orchestration. Build the loop by hand once so you understand what the framework is doing for you.
+**Can I build an agent without LangChain or CrewAI?**
+Yes, and it's often the better first move. A minimal agent is a while loop, an API call to a model, a function dispatcher, and a history list, which fits in roughly fifty lines of Python [dev.to](https://dev.to/klement_gunndu/build-an-ai-agent-loop-in-50-lines-of-python-59jk). Frameworks earn their keep later, when you need standardized tool schemas, tracing, retries, and orchestration. Build the loop by hand once so you know what the framework is doing for you.

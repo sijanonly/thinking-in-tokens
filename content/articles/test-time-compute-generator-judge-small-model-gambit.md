@@ -144,7 +144,10 @@ $$A \;=\; M \;+\; \frac{3}{R}\,(M-1), \qquad R = \frac{\text{inference demand}}{
 
 ### Worked Self-Test (Both Numbers Computed, Not Estimated)
 
-**Question 1: samples to reach 50% reach when single-attempt success q = 0.05.**
+**Question 1:
+If single-attempt success is \\(p_i = 0.05\\), compute the exact theoretical number of independent samples \\(k\\) required to reach a \\(50\%\\) coverage probability (\\(pass@k = 0.5\\)) using the logarithmic derivation \\(1 - (1-p_i)^k = 0.5\\)
+
+samples to reach 50% reach when single-attempt success q = 0.05.**
 
 Solve the reach equation for the draw count:
 
