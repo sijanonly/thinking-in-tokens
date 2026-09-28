@@ -10,4 +10,5 @@ dependencies = [
     "markdown==3.8.2",
     "pelican-render-math>=1.0.5",
     "beautifulsoup4>=4.15.0",
+    "pelican-sitemap>=1.2.2",
 ]

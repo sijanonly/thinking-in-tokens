@@ -67,5 +67,19 @@ DIRECT_TEMPLATES = [
 ]
 
 PLUGINS = [
-    "render_math",
+    "render_math", "sitemap",
 ]
+
+SITEMAP = {
+    'format': 'xml',
+    'priorities': {
+        'articles': 0.8,
+        'indexes': 0.5,
+        'pages': 0.7
+    },
+    'changefreqs': {
+        'articles': 'monthly',
+        'indexes': 'daily',
+        'pages': 'monthly'
+    }
+}
