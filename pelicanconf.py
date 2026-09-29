@@ -16,7 +16,12 @@ PAGE_PATHS = ["pages"]
 
 STATIC_PATHS = [
     "images",
+    "robots.txt",
 ]
+
+EXTRA_PATH_METADATA = {
+    "robots.txt": {"path": "robots.txt"},
+}
 
 THEME = "theme/elegant"
 
