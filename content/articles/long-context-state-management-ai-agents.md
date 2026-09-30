@@ -1,155 +1,142 @@
 Title: Long-Context and State Management for AI Agents
 Date: 2026-09-23
 Category: AI Agents
-Tags: ai-agents, tool-calling, grammar-constrained-decoding
+Tags: ai-agents, llm-inference, context-management
 Slug: long-context-state-management-ai-agents
 Authors: Sijan Bhandari
-Summary: Long-context AI agents slow down as history grows. Here is how KV caching and context compaction keep latency under control.
+Summary:  Learn why long-running AI agents slow down, and how prefix caching, RoPE scaling, and context compaction affect latency and retrieval.
 
-## Why an Agent Run Is a Marathon
+Blog Title: Why Long-Running AI Agents Slow Down with KV Caching and Context Compaction  
+Slug: long-running-ai-agents-kv-cache-rope-context-compaction  
+Category: AI Agents  
+Meta Description: Learn why long-running AI agents slow down, and how prefix caching, RoPE scaling, and context compaction affect latency and retrieval.  
+Tags: ai-agents, llm-inference, context-management
 
-An agent does not answer one question and stop. It runs for hours or days: calling tools, reading outputs, fixing errors, trying again. Every step lands in its conversation history, which I will write as h_t, and by the end of a long run that history balloons to tens or hundreds of thousands of tokens. That is far more than fits comfortably in a model's working memory, and far more than the prefill step can chew through for free.
 
-Picture a detective working a long case. Every note, every interview transcript, every dead-end lead gets stapled into the case file. The file grows until the detective spends more time re-reading the file than detecting.
+A run that lasts hours or days keeps adding tool calls, outputs, errors, and retries to its conversation history, h_t. That history can grow to tens or hundreds of thousands of tokens. The challenge is keeping the useful parts available without repeatedly paying to process the same text or burying important evidence. I'll walk through three techniques, then two failures that show why placement and ordering matter.
 
-Three techniques handle that growth, and they build on each other. I take them in the order you need them, then walk through two failures that show why ordering and placement matter more than most teams expect.
+## Why long-running agents slow down
 
-## Pillar 1: KV Caching and Prefix Reuse (RadixAttention)
+Picture a detective working a long case. Every note, interview transcript, and dead-end lead gets stapled into the case file. Eventually, the detective spends more time rereading the file than detecting.
 
-### The plain-language version
+Three parts of the stack deal with that growth: KV prefix caching, positional encoding, and context compaction. They solve different problems, and none makes the others unnecessary.
 
-When a transformer processes text it converts every token into Key and Value representations, which act as a pre-digested summary of each word that the attention mechanism can consume. Producing those summaries is the expensive part.
+## How KV caching speeds up repeated agent prompts
 
-Here is the waste. At every turn, the agent's prompt looks like this:
+### What prefix caching reuses
 
-System instructions + tool definitions + everything that happened so far + one new thing
+A transformer builds Key and Value representations as it processes tokens. In a multi-turn agent, each new prompt often contains the same system instructions, tool definitions, and prior history, followed by one new observation. Recomputing the shared prefix wastes work.
 
-The "everything that happened so far" block is identical to the previous turn. Recomputing its summaries every single time is like a chef re-chopping vegetables for a stew, every bowl served, when the vegetables were already chopped yesterday.
+It's like a chef chopping the same vegetables for every bowl of stew after the vegetables were already prepared. Engines such as vLLM and SGLang can cache the KV state for shared prefixes and reuse it on later requests. SGLang's RadixAttention organizes reusable cache entries to find shared prefixes; vLLM's Automatic Prefix Caching skips computation for a matching prefix. [SGLang paper](https://par.nsf.gov/servlets/purl/10524135) [vLLM documentation](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/)
 
-### How the fix works
+That only helps when the new request actually shares a prefix with cached work. Prefix caching reduces repeated prompt-prefill work. It doesn't remove the cost of processing new tokens or generating the response.
 
-Engines like vLLM and SGLang store those pre-computed summaries (the KV cache) in GPU memory, organized as a radix tree. Think of a shared filing system where identical text prefixes point to the same cached blocks. When a new turn arrives, the engine notices that the first 99% of the prompt has not changed, skips the recomputation, and does fresh work only on the newly appended observation. That boundary is the prefix cache boundary: the static prefix is a cache hit, and only the new token delta gets computed.
+### Why changing an old token costs latency
 
-Run the numbers and the payoff is obvious. Without prefix caching, prefill cost scales with the square of context length, O(N²), because every token has to look at every other token. With it, you pay once and reuse.
+Prefix caching depends on matching prompt prefixes. If the runtime rewrites an old message, changes a timestamp, or reformats a retry block, the reusable prefix ends at the first changed token, subject to the cache's block boundaries. Later blocks no longer match that prefix, so the engine has to process the unmatched remainder again.
 
-### The catch: cache invalidation
+The practical rule is simple: treat historical prompt content as immutable and append-only when possible. A timestamp or retry-format change can look cosmetic and still affect how much work the engine can reuse.
 
-The cache survives only while the prefix stays byte-for-byte identical. If the harness edits one token in the history, say by retroactively rewriting an old message, the prefix hash changes and every cached block after that point gets thrown away. All that re-chopping happens again.
+For standard full attention, the attention computation grows roughly with the square of sequence length, O(N²), because each token attends across the sequence. Prefix caching can avoid repeating shared-prefix computation across requests, but the attention work for new or unmatched text remains. [FlashAttention paper](https://arxiv.org/abs/2205.14135)
 
-So the practical rule: treat the historical prompt as immutable and append-only. Choices that look cosmetic, such as where you insert a timestamp or how you format a retry message, carry real latency consequences. I will show the worst version of this below.
+## What RoPE scaling changes in long contexts
 
-## Pillar 2: Positional Encodings and RoPE
+### How rotary position embeddings work
 
-### The plain-language version
+A model needs positional information because token order matters. RoPE, or Rotary Position Embedding, applies position-dependent rotations to queries and keys, making relative position part of the attention calculation. [RoFormer paper](https://arxiv.org/abs/2104.09864)
 
-A model needs to know where each token sits in the sequence, because meaning depends on order. The dominant technique is RoPE (Rotary Position Embedding): each token's representation gets rotated by an angle proportional to its position, like the hands of a clock. Token 5 rotates a little. Token 5,000 rotates a lot.
+The clock analogy helps: token 5 rotates by one amount; token 5,000 by another. But a model trained on shorter sequences may not handle positions far beyond that training range well. RoPE alone doesn't guarantee that a model can use an arbitrarily long context.
 
-### What happens when context gets too long
+### How YaRN extends the context window
 
-The rotations were calibrated during training, when the model saw positions only up to some training context length L_train, say 8,000 tokens. Push an agent's trajectory past that limit and the rotation angles enter territory the model never saw. Attention scores implode. The ability to connect related pieces of text collapses, and reasoning quality falls off a cliff. It is like a clock whose hands keep spinning past 12 and start meaning something the clock was never designed to express.
+YaRN changes how RoPE frequencies are interpolated to extend a model's usable context. The paper reports extending Llama 2 models, trained with a 4,096-token context, to 128k; its 128k configuration was fine-tuned on 64k segments and evaluated beyond that length. So the example is not an 8k-to-128k extension. [YaRN paper](https://proceedings.iclr.cc/paper_files/2024/file/874a4d89f2d04b4bcf9a2c19545cf040-Paper-Conference.pdf)
 
-### The fix: frequency-domain interpolation
+I want to be honest about the tradeoff. A larger supported window doesn't mean the model uses every position equally well. Scaling RoPE addresses positional range; it doesn't solve the other ways long-context retrieval can fail.
 
-Instead of letting the angles fly blind, engines interpolate in the frequency domain. YaRN is the example I keep running into. Interpolation smoothly stretches the positional scale so a model trained at 8k tokens can operate at 128k. Slow the whole clock down, and the familiar range covers a much longer span.
+## How to compact an agent's context
 
-I want to be honest about the tradeoff. The stretching works, yet it still carries a cost. The model now reasons in a regime that only approximates its training distribution, which is one reason long-context performance stays shakier than short-context performance even after the scaling tricks land.
+At some point, the trajectory has to shrink. I use three escalating strategies, each with a different failure mode.
 
-## Pillar 3: Context Compaction, or Deciding What to Forget
+### Strategy A, truncating oversized tool output
 
-GPU memory is finite and attention still scales quadratically, so at some point the trajectory has to shrink. I reach for three escalating strategies.
+A large tool output, such as a 5,000-line git diff or log file, can be clipped mechanically. Keep the first ~50 lines and the last ~50, then preserve system instructions and recent turns.
 
-### Strategy A: rule-based truncation
+The problem is obvious. You don't know which 4,900 lines mattered. If the bug sat on line 2,300, truncation deleted your evidence. This approach is cheap and predictable, and it's also dumb.
 
-A large tool output, say a 5,000-line git diff or a huge log file, gets mechanically clipped. Keep the first ~50 lines and the last ~50 lines, discard the middle, and always preserve the system instructions and the recent turns.
+### Strategy B, summarizing old agent history
 
-The flaw is staring you in the face. You do not know which 4,900 lines mattered. If the bug sat on line 2,300, truncation deleted your evidence. This approach is cheap and predictable, and it is also dumb.
-
-### Strategy B: LLM state summarization
-
-A secondary LLM pass reads the old history (h_{1:t-k}) and compresses it into a structured snapshot with three fields:
+A secondary LLM pass can compress older history, h_{1:t-k}, into a structured snapshot with three fields:
 
 - Goal: what the user originally asked for
 - Completed sub-tasks: which tools ran and what happened
-- Current state: what is pending and what comes next
+- Current state: what's pending and what comes next
 
-Hundreds of raw tokens of history collapse into a compact state summary block that gets spliced into the prompt.
+Hundreds of raw tokens can collapse into a compact state block. The catch is that a summary keeps conclusions and discards evidence. If the agent later needs the exact error from turn 12 because the situation changed, that verbatim detail may be gone.
 
-The flaw here is subtler. A summary keeps conclusions and discards the evidence. If the agent later needs to re-examine the exact error message from turn 12, because the situation changed and the old conclusion no longer holds, that verbatim detail may be gone. Summarization loses information in ways you cannot predict in advance. My honest read: this is the least-solved problem in the whole stack. What to keep depends on what the future will ask for, and you find out you kept the wrong things only after the agent fails.
+This is the least-solved problem in the stack, in my view. What to keep depends on what the future will ask for. You only learn you kept the wrong thing after the agent fails.
 
-### Strategy C: memory tiering
+### Strategy C, putting old turns in external memory
 
-Instead of holding everything in the active prompt, old turns get offloaded to an external vector database or key-value store, a searchable archive the agent can query on demand. The prompt stays lean and the memory lives outside it.
+Instead of keeping every old turn in the active prompt, offload it to an external vector database or key-value store. The prompt stays lean, and the agent can search the archive when it needs an old detail.
 
-The tradeoff: retrieval becomes a step that can fail or run slow, and the agent has to know what to ask for, which is itself a reasoning task. Retrieval quality deserves its own post, so treat this as an open door for now.
+Retrieval adds another step that can fail or run slowly. The agent also has to know what to ask for, which is itself a reasoning task. Retrieval quality deserves its own post, so I'll leave that door open here.
 
-These strategies layer together in practice. Real systems clip the obviously verbose tool outputs, summarize the settled history, and offload the long tail to external storage.
+In practice, these strategies can layer together: clip obviously verbose tool output, summarize settled history, and offload the long tail to external storage.
 
-## Two Agent Failures, Worked Through
+## Why a timestamp can break prefix caching
 
-### Failure 1: the timestamp that breaks everything
+Suppose the runtime inserts a changing timestamp, such as "Current Time: 2026-09-17 07:04:45," in the middle of the system prompt on every turn. What happens to the KV cache?
 
-Scenario: the harness injects a dynamic timestamp, Current Time: 2026-09-17 07:04:45, into the middle of the system prompt on every turn. What happens to the prefix KV cache, and what does it do to latency?
+Everything before the timestamp still matches, so that part may be reused. Tool definitions and the accumulated trajectory after it fall outside the matching prefix. On every turn, the engine must process that unmatched remainder again.
 
-This is close to a worst-case placement. Remember the rule from Pillar 1: the KV cache is valid only for the portion of the prompt that is byte-for-byte identical to the previous turn's prompt, and the cache boundary stops at the first changed token.
+A timestamp at the very end of the full prompt would leave most of the stable prefix intact. Put dynamic content last, if it has to be in the prompt at all. The timestamp carries little information for the model, yet its placement can cut off reuse for a large part of the history. Runtime details the model never sees can dominate real agent latency.
 
-Because the timestamp sits in the middle of the system prompt:
+## Why important tool output gets lost in the middle
 
-- Everything before the timestamp, the first part of the system prompt, still matches the previous turn, so those KV blocks stay cached. A small win, and that is all you get.
-- Everything after the timestamp, meaning the rest of the system prompt, all tool definitions, and the entire trajectory history, now sits behind a changed token. The prefix hash for that region no longer matches. The cache for all of it is invalidated.
-- On every single turn the engine has to recompute the K/V projections for the full remainder of the prompt, the same O(N²)-scaled prefill work that prefix caching exists to avoid. As the trajectory grows to tens of thousands of tokens, that recomputation grows with it, turn after turn.
+Research on long-context models finds that performance can drop when relevant information sits in the middle of the input. In tests of multi-document question answering and key-value retrieval, performance was often strongest when the relevant fact appeared near the beginning or end. [Lost in the Middle](https://aclanthology.org/2024.tacl-1.9/)
 
-Latency impact: dramatic and compounding. A timestamp injected at the very end of the prompt would cost almost nothing, since only a few tokens recompute. Injected in the middle of the system prompt, it turns every turn into a full prefill of the entire history. Static content first, dynamic content last. A dynamic timestamp belongs at the tail of the prompt, if anywhere at all.
+Agent histories put a lot of tool output in exactly that middle region:
 
-There is a design irony here worth naming. The timestamp carries almost no information value to the model, and its position silently destroys the single biggest inference optimization available. Harness-level implementation details like this, invisible to the model itself, dominate real-world agent latency.
+- The head holds the system prompt and the user's original goal.
+- The tail holds the latest turns.
+- Between them, stdout, git diffs, tool results, and error dumps accumulate.
 
-### Failure 2: why "lost in the middle" hurts agents more
+That means the evidence of what actually happened when a tool ran may sit where retrieval is harder. A subtle error message buried mid-trajectory may be effectively invisible when the agent reasons about it later.
 
-Empirical studies show long-context models retrieve facts at the head and the tail of the context window far more accurately than facts buried in the middle. The shape is the U-shaped attention curve. Picture a person skimming a long document by reading the first page and the last page carefully and only glancing at the pile in between.
+Compaction can make this worse. If truncation keeps the head and tail of a tool output and deletes the middle, the runtime removes some of the same content the model already struggles to retrieve. If line 2,300 in a 5,000-line output contains the bug, that detail can disappear before the agent gets another chance to inspect it.
 
-Now connect that to Strategy A. Agent trajectories are structurally built so the middle gets stuffed with exactly the material that matters most:
+The model won't announce that it missed the line. It may still reason confidently from an incomplete record, which looks from the outside like the agent is simply wrong.
 
-- The head of the context holds the system prompt and the user's original goal, which is important material sitting in the well-attended zone.
-- The tail holds the most recent turns, also well attended.
-- The middle accumulates long command outputs: stdout logs, git diffs, tool results, error dumps. That is precisely the region where models retrieve poorly.
+Put critical facts near the head or tail, for example by restating a key finding at the end of a tool output. Summarize important findings before they get buried. And use external memory for bulky raw outputs that only matter occasionally.
 
-So the agent's most information-dense evidence, what actually happened when the tool ran, gets deposited into the part of the context the model attends to worst. The danger compounds.
+## What I still doubt about agent memory
 
-A subtle error message buried mid-trajectory may be effectively invisible when the agent later reasons about it. Compaction can make this worse by design: rule-based truncation keeps the head and tail of tool outputs and drops the middle, mirroring at the harness level the same head and tail bias the model already has. If the model attends to the head and tail anyway, and the harness deleted the middle, the two failure modes align perfectly.
+The caching rule extends beyond one inference engine. Keeping the prefix stable is a contract between the runtime and the engine. Break it with timestamps, adaptive formatting, or reordered messages, and the cost may show up only as an agent that feels slow.
 
-The failure is also silent. The model does not announce that it could not see line 2,300. It reasons confidently with an incomplete picture, which is a hallucination risk that looks from the outside like the agent simply being wrong.
+Compaction is a judgment call dressed as a technical decision. A summary preserves the map and loses the territory. Truncation preserves the edges and loses the center. Either can leave an agent unable to recover from an early wrong conclusion.
 
-Mitigations that follow from this logic: put critical facts near the head or the tail, for example by restating key findings at the end of a tool output. Prefer summarization that lifts important findings out of the middle. Use memory tiering so bulky raw outputs never sit in the active context at all.
+I also doubt that memory tiering is an escape hatch. Retrieval quality becomes a new failure point. If the vector store misses the one log line that mattered, the agent fails anyway, just with a cleaner-looking prompt.
 
-## What I Still Doubt
+Before building anything, I'd want to know how often trajectory content actually needs retroactive editing. If the answer is rarely, append-only history gives prefix caching room to work. If it happens often, the architecture needs a different plan from day one.
 
-The caching rule generalizes well beyond engineering. Keeping the prefix stable is a contract between the harness and the inference engine. Break it casually, through timestamps or adaptive formatting or reordered messages, and you pay a tax that never shows up on a dashboard. It just shows up as the agent feeling slow.
+## FAQ
 
-Compaction is a judgment call wearing the costume of a technical decision. What to drop from the middle is a question about what the future will need, and the future is unknowable at compaction time. A summary preserves the map and loses the territory. Truncation preserves the edges of the territory and loses its center. Either one can gut an agent's ability to recover from a wrong early conclusion.
+### What invalidates an agent's KV prefix cache?
 
-An honest doubt: memory tiering gets presented as the escape hatch, yet retrieval quality then becomes a fresh single point of failure. If the vector store misses the one log line that mattered, the agent fails anyway, just with a cleaner-looking prompt.
+A change in earlier prompt text limits reuse to the unchanged prefix before it, and cache matching may also depend on block boundaries. A timestamp rewritten mid-prompt, a reordered message, or a reformatted retry block can all reduce how much cached work is reusable.
 
-And a question I would want answered before building anything: how often does trajectory content actually need retroactive editing? If the answer is rarely, append-only design plus prefix caching is a huge free win. If the answer is often, the architecture needs a different plan from day one.
+### Can RoPE scaling solve long-context problems by itself?
 
-## The One Idea That Connects All Three Pillars
+No. YaRN extends the positional range, and its paper reports Llama 2 extensions up to 128k. A bigger context window doesn't guarantee equal retrieval or reasoning quality at every position, especially for facts buried in the middle.
 
-Attention is expensive, and it is biased. I attack that single problem at three layers. The engine layer owns the cache. RoPE scaling lives inside the model's own internals. The harness layer decides what enters the window at all. A robust agent stack needs all three, because each layer's failure mode gets covered by a different one.
+### Should I truncate or summarize long tool output?
 
----
+Use truncation when the output is mostly repetitive and its edges are likely to be useful. Use summarization for settled history when preserving conclusions matters more than keeping every exact line. If a bulky output might be needed later, put it in external storage and retrieve it on demand.
 
-### FAQ
+### Why did an agent get slower after a timestamp was added?
 
-**What exactly invalidates a KV prefix cache?**
+If the timestamp sits in the middle of the prompt, the cache can only reuse the unchanged prefix before it. The engine then has to process the unmatched remainder again, including the history after that point. Moving dynamic text to the end preserves more of the stable prefix.
 
-Any byte change in the prompt before the point where fresh content begins. The cache is keyed on prefix hashes, so it holds only while the prefix stays byte-for-byte identical to the previous turn. A timestamp rewritten mid-prompt, a reordered message, or a reformatted retry block all change the hash. Everything after the changed token gets recomputed from scratch on the next turn.
+### What belongs in an agent's external memory?
 
-**Can I fix long-context problems just by scaling RoPE to a bigger window?**
-
-Partly. Frequency-domain interpolation such as YaRN lets a model trained at 8k tokens serve 128k, but the model then runs in a positional regime that only approximates its training distribution. Retrieval and reasoning degrade as you push further past the training length. Extending the window also does nothing about the U-shaped attention curve, so facts sitting in the middle stay hard to retrieve no matter how large the window grows.
-
-**For long tool outputs, should I truncate or summarize?**
-
-Both, at different points. Truncation is cheap and keeps verbatim edges while losing the center, so it suits outputs you know are mostly boilerplate, such as a repetitive log. Summarization keeps conclusions while losing verbatim evidence, so it suits settled history you will not need to re-examine line by line. When an output is bulky and only occasionally relevant, offload it to external storage and let the agent query it.
-
-**Why did my agent get slower after someone added a timestamp to the prompt?**
-
-Because the timestamp sits in the middle of the system prompt and invalidates the prefix cache for everything after it, including all tool definitions and the whole trajectory. Every turn becomes a full prefill of the entire history, and the cost scales quadratically, so it compounds as the trajectory grows. Moving dynamic content to the tail of the prompt keeps the static prefix cacheable.
+Store bulky raw material that is too large to keep in the active prompt but may matter later, such as a long stdout log or a git diff. Keep the current goal, completed work, and pending state easy to access. Retrieval still needs to find the exact evidence the agent asks for.
