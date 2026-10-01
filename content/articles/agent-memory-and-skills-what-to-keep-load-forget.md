@@ -6,168 +6,139 @@ Slug: cagent-memory-and-skills-what-to-keep-load-forget
 Authors: Sijan Bhandari
 Summary: How agent memory and skills differ, why progressive disclosure saves context, and when to prune skills without losing rare but valuable routines.
 
-An agent working across many separate tasks needs to remember useful things without carrying its entire history into every new conversation. The key distinction is:
+An agent that runs ten unrelated jobs forgets nine of them. That's the gap memory systems exist to close. Context compaction keeps one task from drowning in its own history. Memory and skills carry useful knowledge from one task to the next. The hard part is deciding what to keep, how to pull it back, and how much detail to load. This post covers the split between memories and skills, how layered loading actually works, and how to stop a skill library from turning into dead weight.
 
-- **Context compaction** helps manage information *within one ongoing task*.
-- **Memory and skills** help preserve useful knowledge *between separate tasks*.
+## Memories and skills store different kinds of knowledge
 
-A useful analogy: during one project, you keep a tidy workbench; between projects, you keep a filing cabinet. The workbench should hold only what is needed right now. The filing cabinet should store things that are likely to help again.
+A memory records a fact, a past event, or a detail about an environment. My standing example: "This store requires an authentication token in request headers."
 
-The hard part is deciding what to keep, how to retrieve it, and how much detail to load.
+A skill captures a reusable way of doing something. Procedures. "Search for a product, compare options, verify the result."
 
----
+Memory is a note on the doorframe: "The front door sticks." A skill is the routine for getting through it: turn the handle, lift the door slightly, push.
 
-## 1. Memories and skills are different kinds of knowledge
+This split matters because the two kinds of knowledge age differently. A fact about one website or one account goes stale. A general procedure, like checking filters before scanning results, travels well across sites.
 
-**Memories** record facts, past events, or details about an environment. For example: "This store requires an authentication token in request headers."
+**Practical takeaway:** Keep durable facts as memories. Keep repeatable methods as skills. If a skill leans on an interface that changes, say so inside the skill instead of treating that dependency as permanent.
 
-**Skills** capture a reusable way of doing something. They are procedures: "Here's how to search for a product, compare options, and verify the result."
+Skills come in two flavors, and the papers behind this label them clearly. Textual skills show up in AWM ([Agent Workflow Memory](https://arxiv.org/abs/2409.07429)) and ReasoningBank ([ReasoningBank, ICLR 2026](https://proceedings.iclr.cc/paper_files/paper/2026/hash/980ea04d23d1f6908964eba2a74afe45-Abstract-Conference.html)), which distills reasoning strategies from both successful and failed rollouts. Code skills show up in Voyager ([Voyager](https://arxiv.org/abs/2305.16291)), ASI ([Inducing Programmatic Skills for Agentic Tasks](https://arxiv.org/abs/2504.06821)), and PolySkill ([PolySkill, ICLR 2026](https://proceedings.iclr.cc/paper_files/paper/2026/hash/e350897ed832f9cad6f2e223e7acad6d-Abstract-Conference.html)). Those papers carry far more implementation detail than this post does, so don't read more into the labels than they say.
 
-Skills may be written by people or learned by an agent from successful past work. In the sources behind this post, **AWM** ([Agent Workflow Memory](https://arxiv.org/abs/2409.07429)) and **ReasoningBank** ([ReasoningBank: Scaling Agent Self-Evolving with Reasoning Memory](https://proceedings.iclr.cc/paper_files/paper/2026/hash/980ea04d23d1f6908964eba2a74afe45-Abstract-Conference.html)) are associated with textual skills, while **Voyager** ([Voyager: An Open-Ended Embodied Agent with Large Language Models](https://arxiv.org/abs/2305.16291)), **ASI** ([Inducing Programmatic Skills for Agentic Tasks](https://arxiv.org/abs/2504.06821)), and **PolySkill** ([PolySkill: Learning Generalizable Skills Through Polymorphic Abstraction for Continual Learning](https://proceedings.iclr.cc/paper_files/paper/2026/hash/e350897ed832f9cad6f2e223e7acad6d-Abstract-Conference.html)) are examples of code skills. Those papers carry far more implementation detail than is summarised here, so it's best not to infer more than the labels above.
+## Load detail in layers instead of all at once
 
-A memory is a note saying, "The front door sticks." A skill is the routine for getting inside: "Turn the handle, lift the door slightly, then push."
+Packing every skill into the active instructions crowds the context window. Costs go up. The model gets distracted. Progressive disclosure fixes this by loading information in tiers.
 
-A fact about one particular website or account may become outdated. A general procedure, such as checking filters before scanning results, may be useful in many settings. Keeping these two kinds of knowledge separate can make it easier to reuse procedures while updating environment-specific details.
-
-**Practical implication:** Store durable facts as memories, and store repeatable methods as skills. If a skill depends on a changing interface, make that dependency explicit rather than treating it as timeless knowledge.
-
----
-
-## 2. Progressive disclosure: load detail only when it's needed
-
-Loading every skill into an agent's active instructions can crowd the context window. That can raise costs and distract the model from the task at hand. Progressive disclosure addresses this by loading information in layers.
-
-| Level | What the agent gets | Plain-language version |
+| Tier | What the agent gets | Plain version |
 |---|---|---|
-| **1. Metadata index** | A small YAML header with a skill's name and trigger description | A table of contents |
-| **2. Skill instructions** | The `SKILL.md` body, loaded when the skill appears relevant | The recipe or how-to guide |
-| **3. Supporting assets** | Scripts, assets, and reference files, used when needed | Tools and supplies for carrying out the recipe |
+| 1. Metadata index | A small YAML header with a skill's name and trigger description | A table of contents |
+| 2. Skill instructions | The `SKILL.md` body, once the skill looks relevant | The how-to guide |
+| 3. Supporting assets | Scripts, assets, and reference files, fetched on demand | Tools and supplies |
 
-The [agent-skills specification](https://agentskills.io/specification) formalises exactly this split: only a name and description (roughly 100 tokens) are loaded at startup, the full `SKILL.md` body is pulled in when the skill is activated, and files under `scripts/`, `references/`, or `assets/` are read on demand. **Hermes** documents the same pattern as an explicit three-step loading sequence via `skills_list()` and `skill_view(name)`, then `skill_view(name, path)` for a specific reference file ([NousResearch Hermes Agent](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/skills.md)). **OpenHands** points developers at the same AgentSkills `SKILL.md` format for progressive disclosure ([OpenHands docs](https://docs.openhands.dev/sdk/guides/skill)), and a source-code study of coding agents describes the identical "index in prompt, then `skill_view`, then linked assets" chain ([Harness Engineering](https://arxiv.org/html/2609.00006v1)).
+The [agentskills.io specification](https://agentskills.io/specification) formalizes exactly this split. Only a name and description, roughly 100 tokens, load at startup. The full `SKILL.md` body comes in when the skill activates, with the spec recommending the body stay under about 5,000 tokens. Files under `scripts/`, `references/`, or `assets/` get read only when a step needs them.
 
-Think of a repair manual. You don't carry the whole manual open on your workbench. You look at the index, open the relevant instructions for the repair, and fetch a specific tool only when the procedure calls for it.
+Hermes documents the same idea as an explicit three-step sequence: `skills_list()` returns names, descriptions, and categories for about 3k tokens, `skill_view(name)` pulls full content, and `skill_view(name, path)` grabs one reference file ([NousResearch Hermes Agent](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/skills.md)). OpenHands points developers at the same AgentSkills `SKILL.md` format, where the agent sees a summary and reads the full content on demand ([OpenHands docs](https://docs.openhands.dev/sdk/guides/skill)). A source-code study of eleven coding agents describes the identical chain of an index in the prompt, a `skill_view` call, then linked assets ([a source-code study of eleven coding agents](https://arxiv.org/html/2609.00006v1), July 2026).
 
-The agent can discover what skills exist without paying the attention cost of reading every full instruction. It can then load the detailed workflow, and any scripts or references, only when they are relevant. One budget-constrained study of web agents makes the cost side concrete: adding skill and memory modules is not automatically worth the extra tokens ([Are Online Skill and Memory Modules Always Worth Their Tokens?](https://arxiv.org/pdf/2606.15017)).
+Think about a repair manual. You don't lay the whole thing open on the bench. You check the index, flip to the relevant repair, and grab one tool when the procedure asks for it.
 
-**Practical implication:** Keep the initial index compact and the skill descriptions clear enough to help the agent choose the right one. Progressive disclosure reduces clutter, but it does not guarantee a good choice. Poor triggers can still cause the wrong skill to be loaded.
+The cost side has a concrete number. A budget-constrained study of web agents found that adding skill and memory modules isn't automatically worth the extra tokens ([Are Online Skill and Memory Modules Always Worth Their Tokens?](https://arxiv.org/pdf/2606.15017)). Against a budget-matched actor, the plain baseline matched or beat all three augmentation methods in aggregate success rate across four WebArena domains.
 
----
+**Practical takeaway:** Keep the index tight and the descriptions sharp enough that the agent picks the right entry. Layers cut clutter. They don't guarantee a good choice. A vague trigger still loads the wrong skill.
 
-## 3. Text skills and code skills: flexibility versus speed
+## Text skills and code skills trade flexibility for speed
 
-Induced skills can be represented as natural-language procedures or executable code. The trade-off here is not a simple ranking; the two representations are useful under different conditions.
+Induced skills can be written as natural-language procedures or as runnable code. Neither wins everywhere. Each fits different conditions.
 
-| Dimension | Textual skills (e.g., AWM, ReasoningBank) | Code skills (e.g., Voyager, ASI, PolySkill) |
+| Dimension | Textual (AWM, ReasoningBank) | Code (Voyager, ASI, PolySkill) |
 |---|---|---|
-| **Execution style** | Natural-language instructions and step-by-step guidance | Python or Bash functions exposed as callable tools |
-| **Adaptability** | Higher: the model can interpret instructions flexibly when a site's interface changes slightly | Lower or more brittle: hardcoded selectors or API parameters can break when they change |
-| **Step efficiency** | Lower: the agent may need to make separate tool calls for each sub-step | Higher: one function can perform many low-level actions |
-| **Verification** | Often assessed through softer LLM-as-a-Judge checks | Can be checked programmatically with linters and automated unit tests |
+| Execution style | Natural-language steps | Python or Bash functions exposed as tools |
+| Adaptability | Higher; the model reinterprets when an interface shifts slightly | Lower; hardcoded selectors or API params break on change |
+| Step efficiency | Lower; one tool call per sub-step, often | Higher; one function runs many low-level actions |
+| Verification | Softer, often LLM-as-a-Judge | Programmatic, via linters and automated unit tests |
 
-A **text skill** is like giving a capable colleague a checklist: it is easy to adapt when circumstances shift, but the colleague still has to perform each step.
+A text skill is a checklist handed to a capable colleague. Easy to adjust when things shift. The colleague still does every step. A code skill is the machine that runs the checklist fast and the same way every time. If that machine was built for an old button layout, a small interface change stops it cold.
 
-A **code skill** is like a machine that carries out the checklist quickly and consistently. But if the machine relies on an old button layout, a small interface change can stop it.
+The numbers back the efficiency claim. ASI beat a static baseline by 23.5% and a text-skill version by 11.3% in success rate on WebArena, cutting 10.7 to 15.3% of steps by composing primitive actions like clicks into higher-level skills. Voyager collected 3.3x more unique items than prior work and unlocked tech-tree milestones up to 15.3x faster in Minecraft.
 
-### PolySkill's proposed mitigation
+### How PolySkill reduces code brittleness
 
-PolySkill addresses code brittleness through an abstract base-class schema. For example, a shared interface such as `AbstractShoppingSite.search_product()` defines the operation that a shopping site implementation should provide. Site-specific subclasses, such as `AmazonWebsite` and `TargetWebsite`, then implement that operation for each site. The PolySkill paper frames the failure it targets in similar terms: code skills work well on the original website but break when the interface shifts ([PolySkill, ICLR 2026](https://proceedings.iclr.cc/paper_files/paper/2026/hash/e350897ed832f9cad6f2e223e7acad6d-Abstract-Conference.html)).
+PolySkill attacks the breakage directly. It separates a skill's abstract goal, the what, from its concrete implementation, the how, drawing on polymorphism in software engineering. A shared interface defines the operation, and site-specific subclasses implement it for each provider. The paper's own framing: existing methods create skills over-specialized to one website that fail to generalize ([PolySkill, ICLR 2026](https://proceedings.iclr.cc/paper_files/paper/2026/hash/e350897ed832f9cad6f2e223e7acad6d-Abstract-Conference.html)).
 
-In plain language: the agent calls a standard-purpose method, while each provider-specific adapter handles the local details. That can make it easier to update a provider's implementation without changing every workflow that uses it. It does not eliminate brittleness; the site-specific implementation still needs maintenance when the site changes.
+The specific class names sometimes cited for this pattern, such as an abstract shopping-site class with per-retailer subclasses, are [UNVERIFIED]. The decoupling idea is what the abstract supports.
 
-Text workflows can be a better fit when interfaces change often or when the steps need interpretation. Code workflows can be a better fit when the process is repeated frequently, the environment is stable enough, and speed or consistent execution matters.
+In plain language: the agent calls one standard method, and each provider adapter handles the local details. Updating a provider doesn't force you to rewrite every workflow that uses it. It doesn't kill brittleness either. The provider-specific code still needs upkeep when the site changes.
 
-A useful rule of thumb is: **automate stable, repeated actions; keep changing or ambiguous steps flexible.** A hybrid can make sense too: use code for reliable operations and natural-language guidance for decisions or exceptions.
+Results land where you'd expect. PolySkill improved skill reuse 1.7x on seen sites, lifted success rates up to 9.4% on Mind2Web and 13.9% on unseen sites, and cut steps by over 20%.
 
----
+Pick text workflows when interfaces change often or steps need judgment. Pick code workflows when a process repeats a lot, the environment holds still, and speed or consistency matters. A hybrid works too. Code for the reliable operations, natural language for the decisions and exceptions.
 
-## 4. Skills need a lifecycle, including deciding what to forget
+## A skill library needs a lifecycle
 
-A skill library can grow without limit. That makes it harder to retrieve the useful items and may slow inference. Three maintenance phases show up repeatedly.
+A skill library grows without a limit if you let it. Then retrieval gets harder and inference slows down. Three maintenance phases show up again and again.
 
-### Admission control: check before storing
+### Check a skill before you store it
 
-Before adding a newly induced skill, a judge model or reward verifier executes the candidate workflow or code to check whether it actually succeeds.
+Before a newly induced skill enters the library, a judge model or reward verifier runs the candidate workflow or code to see whether it actually succeeds.
 
-**Analogy:** Don't add a new recipe to the family cookbook just because someone wrote it down; try it first.
+Don't add a recipe to the family cookbook just because someone wrote it down. Cook it first.
 
-**Practical implication:** A successful-looking trace is not necessarily a reliable reusable skill. Testing before admission can filter out procedures that only appeared to work.
+A trace that looks successful isn't automatically a reliable skill. Testing at admission filters out procedures that only appeared to work.
 
-### Failure reflection: learn from what went wrong
+### Learn from failures
 
-An agent can extract a negative lesson from an unsuccessful attempt. For example: "Don't page through thousands of results; apply category filters first." Systems built on reasoning memory describe this explicitly, storing structured lessons from both successful and failed rollouts ([ReasoningBank, ICLR 2026](https://proceedings.iclr.cc/paper_files/paper/2026/hash/980ea04d23d1f6908964eba2a74afe45-Abstract-Conference.html)).
+An agent can pull a negative lesson out of a failed attempt. "Don't page through thousands of results. Apply category filters first." Systems built on reasoning memory store structured lessons from successful and failed rollouts, and ReasoningBank retrieves those memories at test time ([ReasoningBank, ICLR 2026](https://proceedings.iclr.cc/paper_files/paper/2026/hash/980ea04d23d1f6908964eba2a74afe45-Abstract-Conference.html)).
 
-**Analogy:** A pilot's checklist records not only the normal procedure, but also mistakes that are worth avoiding next time.
+A pilot's checklist records the normal procedure and the mistakes worth avoiding. Same idea.
 
-**Practical implication:** Failures can improve future behavior if the system turns them into specific, reusable guidance, not merely a vague note that "the task failed."
+Failures improve future behavior when the system turns them into specific, reusable guidance. A vague note that "the task failed" does nothing.
 
-### Memory consolidation: prune infrequently used skills
+### Prune the library
 
-**TroVE** prunes skills based on how often they are invoked relative to the total number of tasks solved. Its own framing is a toolbox that is generated, grown, and *periodically pruned* so the functions stay verifiable and efficient ([TroVE, ICML 2024](https://arxiv.org/abs/2401.12869)). An example threshold heuristic given in the source material is to drop functions whose cumulative invocation count falls below roughly **½ log₁₀(N)**, where **N** is the number of tasks solved.
+TroVE trims skills based on how often they're called relative to the number of tasks solved. Its framing is a toolbox that is generated, grown, and periodically trimmed so the functions stay verifiable and efficient ([TroVE, ICML 2024](https://arxiv.org/abs/2401.12869)). The payoff shows in the numbers: toolboxes 79 to 98% smaller than baselines, with human verification 31% faster and 13% more accurate.
 
-Treat that number as a paraphrase, not a quoted result. I could confirm the periodic-pruning mechanism in the TroVE paper, but not that exact formula, so the ½ log₁₀(N) figure stays **unconfirmed**.
+One threshold heuristic from my source material says to drop functions whose running call count falls below roughly **½·log₁₀(K)**, where **K** is the number of tasks solved. Treat that as a paraphrase, not a quoted result. I could confirm the periodic-trimming mechanism in the TroVE paper, but not that exact formula, so the ½·log₁₀(K) figure stays **unconfirmed**.
 
-**Analogy:** Periodically clear out a toolbox: keep the tools that are repeatedly useful, and reconsider the ones that are rarely used.
+Clearing out a toolbox every so often keeps the tools you actually reach for and makes you reconsider the rest.
 
-**Practical implication:** Pruning can reduce clutter and improve the odds of retrieving a useful skill. But infrequent use does not always mean a skill is unimportant: an uncommon emergency procedure might be valuable precisely because it is rarely needed. Frequency is a helpful signal, not a perfect measure of value.
+Pruning cuts clutter and raises the odds of retrieving something useful. Frequency measures value only loosely, though. An uncommon emergency procedure can be worth keeping precisely because it's rare.
 
----
+## Diagnostic exercise
 
-# Diagnostic exercise
+### When would you choose code skills for AWS or GCP consoles, and how would you reduce UI-change brittleness?
 
-## 1. When would you choose code skills for AWS or GCP consoles, and how would you reduce UI-change brittleness?
+I'd lean toward code skills when the console task repeats often, has many predictable low-level steps, and is stable enough to test and maintain. I'd also pick code when the job is costly or error-prone by hand, or when automated checks can confirm the operation completed. I'd pick text skills when the console workflow changes a lot, depends on judgment, or has to absorb interface shifts I can't predict. My source material says nothing about AWS or GCP interfaces specifically, so this is a decision framework, not a claim about either console.
 
-I'd lean toward **code skills** when the cloud-console task is:
+To reduce brittleness, I'd borrow PolySkill's separation of common operation from provider-specific implementation:
 
-- Repeated often, with many predictable low-level steps.
-- Stable enough that the actions can be tested and maintained.
-- Costly or error-prone to perform manually, so a verified routine offers real value.
-- Important to verify systematically, for example where automated checks can confirm that the operation completed as expected.
-
-I'd lean toward **text skills** when the console workflow changes frequently, depends on interpretation, or needs to adapt to interface changes that are hard to anticipate. The source material does not cover AWS or GCP interfaces specifically, so this is a decision framework rather than a claim about any particular console.
-
-To mitigate brittleness, I'd apply the **PolySkill-style separation of common operation from provider-specific implementation**:
-
-1. Define a stable, abstract operation, for example a common "find the target resource" or "apply the requested configuration" method.
+1. Define a stable abstract operation, something like "find the target resource" or "apply the requested configuration."
 2. Put AWS- and GCP-specific behavior behind separate implementations of that operation.
-3. Keep changing UI details out of the shared workflow where possible.
-4. Test the provider-specific implementation after interface changes, and use those checks as part of admission or maintenance.
+3. Keep changing UI details out of the shared workflow.
+4. Test the provider-specific implementation after interface changes, and feed those checks into admission or maintenance.
 
-The main trade-off remains: code can be faster and easier to test, but it can still break when the underlying interface or API changes. An abstraction limits how widely a change spreads; it doesn't make the change disappear.
+The trade-off holds. Code runs faster and tests easier. It still breaks when the interface or API underneath moves. An abstraction limits how far a change spreads. It doesn't make the change vanish.
 
-## 2. Why might 10 retrieved skills perform worse than 1 or 2, and how does consolidation help?
+### Why might 10 retrieved skills perform worse than 1 or 2, and how does consolidation help?
 
-The likely mechanism described here is **context distraction**. A large collection of retrieved skills adds competing instructions and irrelevant detail to the active context. The agent has to decide which instructions apply, and extra material can crowd out the information most useful for the current task. So retrieval can hurt if it returns too much or too many weakly relevant skills. The budget-constrained study above points in the same direction: skill and memory modules carry a real token cost, and that cost is not always repaid ([Are Online Skill and Memory Modules Always Worth Their Tokens?](https://arxiv.org/pdf/2606.15017)).
+The mechanism I can point to is context distraction. A big pile of retrieved skills adds competing instructions and irrelevant detail to the active context. The agent has to sort out which instructions apply, and the extra material crowds out what matters for the current task. Retrieval hurts when it returns too much or too many weakly relevant skills. The budget-constrained study points the same way: skill and memory modules carry a real token cost that isn't always repaid ([Are Online Skill and Memory Modules Always Worth Their Tokens?](https://arxiv.org/pdf/2606.15017)).
 
-This is a useful caution, not proof that "fewer is always better." The aim is to retrieve a small number of **well-targeted** skills, not to impose an arbitrary limit regardless of the task.
+Treat that as a caution. It doesn't prove fewer skills always win. The goal is a small set of well-targeted skills, not an arbitrary cap.
 
-Memory consolidation helps by shrinking the library and improving retrieval precision: it can remove skills that are seldom used, and keep the collection from becoming an ever-growing pile of competing procedures. But frequency-based pruning has a real limitation: a rare, high-value skill could be removed simply because it is rarely needed. Admission checks, task relevance, and retention of critical procedures matter alongside usage counts.
+Consolidation helps by shrinking the library and sharpening retrieval, dropping skills that are seldom used and keeping the collection from becoming a growing stack of competing procedures. Frequency-based pruning has a real blind spot here. A rare, high-value skill could get cut just because it's rarely needed. Admission checks, task relevance, and retention of critical procedures have to weigh in beside usage counts.
 
----
-
-## A few takeaways, and open questions
-
-- **Memory is not the same as skill:** one captures useful facts; the other captures a way of acting.
-- **Load in layers:** an index can be cheap to inspect, while detailed instructions and executable assets are loaded on demand.
-- **Choose representation to fit the task:** text is flexible; code is efficient and more directly testable, but can be brittle.
-- **Treat a skill library as something to curate:** test new skills, learn from failures, and prune carefully.
-
-One unresolved question is **who gets to judge whether a skill is good enough to store**. A judge model or reward verifier can help, but the sources don't say how its standards are set or how false successes are caught. Another is **how relevance is measured at retrieval time**: even a carefully maintained library can distract the agent if it returns the wrong skills. Those are not small implementation details; they determine whether a memory system makes an agent more capable or simply gives it more things to get confused by.
+Two questions stay open for me. Who gets to judge whether a skill is good enough to store? A judge model or reward verifier can help, but my sources don't say how its standards get set or how false successes get caught. And how is relevance measured at retrieval time? A well-maintained library still distracts the agent if it returns the wrong entries. Those aren't small implementation details. They decide whether a memory system makes an agent more capable or just hands it more things to confuse itself with.
 
 ---
 
 ### FAQ
 
-**What is the difference between agent memory and agent skills?**
-Memory stores facts, events, and environment details, such as a token that a site expects in request headers. A skill stores a procedure, such as the sequence for searching a catalogue, comparing options, and verifying the result. Memory answers "what is true here," while a skill answers "how do I do this."
+**Do I need agent memory if I already have agent skills?**
+Yes. The two store different things. Memory holds facts and environment details, like a token a site expects in request headers. Skills hold procedures, like the sequence for searching a catalogue and verifying the result. Drop either one and the agent loses half of what it learned.
 
-**What is progressive disclosure in agent skill loading?**
-It is a layered loading scheme. The agent first sees only a compact index of skill names and trigger descriptions, then loads the full `SKILL.md` instructions when a skill looks relevant, and finally pulls scripts, references, or assets only for the steps that need them. The [agent-skills specification](https://agentskills.io/specification) recommends keeping the metadata tier near 100 tokens and the instruction body under roughly 5,000 tokens.
+**How many tokens does a skill index actually cost?**
+The [agentskills.io specification](https://agentskills.io/specification) puts the metadata tier at roughly 100 tokens per skill at startup, with the instruction body recommended under about 5,000 tokens once activated. Hermes reports its Level 0 list at around 3k tokens total. That's the whole case for layered loading. You pay for the index, not the full manual.
 
-**Why do code skills break more often than text skills?**
-Code skills hardcode assumptions, such as DOM selectors, endpoint paths, or API parameter names. When a site or console changes those details, the function fails immediately. Text skills are read and reinterpreted at run time, so a capable model can absorb small interface shifts without a code change.
+**When should I write a skill as code instead of text?**
+Write code when the task repeats often, the environment is stable enough to test, and you want one function call instead of ten. ASI cut 10.7 to 15.3% of steps by composing clicks into higher-level skills. Keep text when the interface shifts often or a step needs judgment. Code won't reinterpret itself when a selector changes.
 
-**How do you stop a skill library from growing out of control?**
-Use a lifecycle: test a candidate skill before it is admitted, convert failures into specific negative lessons, and periodically prune skills that are rarely invoked. Consolidation improves retrieval precision, but it should not be purely frequency-based, because a rarely used procedure may still be critical when it is finally needed.
+**How often should I prune a skill library?**
+TroVE-style systems trim periodically rather than on a fixed calendar, watching how often each function gets called relative to tasks solved ([TroVE, ICML 2024](https://arxiv.org/abs/2401.12869)). Check for rarely used skills on a regular cycle. Don't cut on frequency alone, because an uncommon emergency procedure may be the most valuable thing in there.
 
 **Is retrieving more skills always worse for an agent?**
-No. Retrieving many weakly relevant skills adds competing instructions and crowds the context, but retrieving a small set of well-targeted skills is exactly the goal. The problem is relevance and volume, not retrieval itself.
+No. Retrieving many weakly relevant skills adds competing instructions and crowds the context, but a small set of well-targeted skills is the point. The problem is relevance and volume together, not retrieval on its own. A budget-constrained study even found the modules' gains often disappear against an agent given the same tokens for more interaction steps ([budget-constrained study](https://arxiv.org/pdf/2606.15017)).
